@@ -169,12 +169,14 @@ namespace InvoiceManagementAPI.Controllers
                     {
                         c.CliCedula,
                         c.CliNombre,
+                        c.CliFechaNacimiento, // Agregado: campo faltante
+                        c.TicIdTipoc,         // Agregado: para logica de respaldo
                         c.CliDireccion,
                         c.CliTelefono,
                         c.CliEmail,
-                        TipoCliente = c.TipoCliente != null
-                            ? c.TipoCliente.TicDescripcion
-                            : null
+                        TipoCliente = new {   // Devolver objeto para coincidir con la expectativa del frontend
+                             TicDescripcion = c.TipoCliente != null ? c.TipoCliente.TicDescripcion : null
+                        }
                     })
                     .ToListAsync();
 

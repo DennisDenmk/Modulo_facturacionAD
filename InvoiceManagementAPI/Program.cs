@@ -71,7 +71,7 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 
 // Habilitar CORS
 app.UseCors("AllowAll");
