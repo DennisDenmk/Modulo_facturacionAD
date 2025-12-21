@@ -61,6 +61,6 @@ namespace InvoiceManagementAPI.Model
         [ForeignKey("TicIdTipoc")]
         public virtual TipoCliente? TipoCliente { get; set; }
 
-        public virtual ICollection<Factura> Facturas { get; set; }
+        public virtual ICollection<Factura>? Facturas { get; set; }
     }
 }
