@@ -1,0 +1,102 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  PROJECT_PATH: '.'  # Ajusta si tu .csproj está en subcarpeta
+  APP_NAME: 'InvoiceManagementAPI'  # Nombre de tu proyecto/DLL
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restaurar dependencias
+      run: dotnet restore ${{ env.PROJECT_PATH }}
+
+    - name: Build
+      run: dotnet build ${{ env.PROJECT_PATH }} --configuration Release --no-restore
+
+    - name: Publish
+      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration Release --output ./publish --no-build
+
+    - name: Crear archivo tar
+      run: tar -czf deploy.tar.gz -C ./publish .
+
+    - name: Copiar archivos a EC2
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "deploy.tar.gz"
+        target: "/home/ubuntu/"
+
+    - name: Deploy en EC2
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          # Detener el servicio
+          sudo systemctl stop facturacion-api
+          
+          # Backup de la versión anterior (opcional)
+          if [ -d "/var/www/facturacion-api-backup" ]; then
+            sudo rm -rf /var/www/facturacion-api-backup
+          fi
+          if [ -d "/var/www/facturacion-api" ]; then
+            sudo cp -r /var/www/facturacion-api /var/www/facturacion-api-backup
+          fi
+          
+          # Limpiar directorio actual
+          sudo rm -rf /var/www/facturacion-api/*
+          
+          # Extraer nuevos archivos
+          tar -xzf /home/ubuntu/deploy.tar.gz -C /var/www/facturacion-api/
+          
+          # Dar permisos
+          sudo chown -R ubuntu:ubuntu /var/www/facturacion-api
+          
+          # Limpiar archivo temporal
+          rm /home/ubuntu/deploy.tar.gz
+          
+          # Iniciar servicio
+          sudo systemctl start facturacion-api
+          
+          # Verificar estado
+          sleep 3
+          sudo systemctl status facturacion-api --no-pager
+
+    - name: Verificar deployment
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          echo "🔍 Verificando servicio..."
+          if sudo systemctl is-active --quiet facturacion-api; then
+            echo "✅ Servicio corriendo correctamente"
+            echo "🌐 API disponible en: http://${{ secrets.EC2_HOST }}"
+          else
+            echo "❌ Error: El servicio no está corriendo"
+            echo "📋 Logs del servicio:"
+            sudo journalctl -u mi-api -n 50 --no-pager
+            exit 1
+          fi
