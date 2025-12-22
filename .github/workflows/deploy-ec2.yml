@@ -97,6 +97,6 @@ jobs:
           else
             echo "❌ Error: El servicio no está corriendo"
             echo "📋 Logs del servicio:"
-            sudo journalctl -u mi-api -n 50 --no-pager
+            sudo journalctl -u facturacion-api -n 50 --no-pager
             exit 1
           fi
