@@ -61,7 +61,7 @@ var app = builder.Build();
 // ============================================
 
 // Habilitar Swagger en desarrollo
-if (app.Environment.IsDevelopment())
+//if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>
