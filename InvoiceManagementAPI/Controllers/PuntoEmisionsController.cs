@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using InvoiceManagementAPI.Data;
 using InvoiceManagementAPI.Model;
+using MySqlConnector; // ✅ Asegúrate de que esto esté presente
 
 namespace InvoiceManagementAPI.Controllers
 {
@@ -47,12 +48,13 @@ namespace InvoiceManagementAPI.Controllers
         }
 
         // PUT: api/PuntoEmisions/5
+        // ⚠️ ASEGÚRATE DE QUE SOLO HAYA UN MÉTODO PUT
         [HttpPut("{id}")]
         public async Task<IActionResult> PutPuntoEmision(int id, PuntoEmision puntoEmision)
         {
             if (id != puntoEmision.PemId)
             {
-                return BadRequest();
+                return BadRequest(new { message = "El ID no coincide" });
             }
 
             _context.Entry(puntoEmision).State = EntityState.Modified;
@@ -72,6 +74,28 @@ namespace InvoiceManagementAPI.Controllers
                     throw;
                 }
             }
+            catch (DbUpdateException ex)
+            {
+                // Buscar la excepción de MySQL en la cadena de excepciones
+                Exception innerException = ex.InnerException;
+
+                while (innerException != null)
+                {
+                    if (innerException is MySqlException mySqlEx)
+                    {
+                        // Error 45000: SIGNAL del trigger
+                        // Error 1062: Duplicate entry (UNIQUE constraint)
+                        if (mySqlEx.Number == 45000 || mySqlEx.Number == 1062)
+                        {
+                            return Conflict(new { message = mySqlEx.Message });
+                        }
+                    }
+                    innerException = innerException.InnerException;
+                }
+
+                // Si llegamos aquí, no fue un error de duplicado
+                throw;
+            }
 
             return NoContent();
         }
@@ -81,27 +105,34 @@ namespace InvoiceManagementAPI.Controllers
         public async Task<ActionResult<PuntoEmision>> PostPuntoEmision(PuntoEmision puntoEmision)
         {
             _context.PuntosEmision.Add(puntoEmision);
+
             try
             {
                 await _context.SaveChangesAsync();
+                return CreatedAtAction("GetPuntoEmision", new { id = puntoEmision.PemId }, puntoEmision);
             }
-            catch (DbUpdateException)
+            catch (Exception ex)
             {
-                if (PuntoEmisionExists(puntoEmision.PemId))
+                // Buscar MySqlException en la cadena
+                Exception current = ex;
+                while (current != null)
                 {
-                    return Conflict();
+                    if (current is MySqlConnector.MySqlException mySqlEx)
+                    {
+                        if (mySqlEx.Number == 45000 || mySqlEx.Number == 1062)
+                        {
+                            return Conflict(new { message = mySqlEx.Message });
+                        }
+                    }
+                    current = current.InnerException;
                 }
-                else
-                {
-                    throw;
-                }
-            }
 
-            return CreatedAtAction("GetPuntoEmision", new { id = puntoEmision.PemId }, puntoEmision);
+                // Si no es error de duplicado, re-lanzar
+                throw;
+            }
         }
 
         // PATCH: api/PuntoEmisions/5/estado
-        // Cambiar estado de un punto de emisión
         [HttpPatch("{id}/estado")]
         public async Task<ActionResult> PatchPuntoEmisionEstado(
             int id,
@@ -120,7 +151,6 @@ namespace InvoiceManagementAPI.Controllers
                     });
                 }
 
-                // Cambiar el estado
                 puntoEmision.PemEstado = request.PemEstado;
 
                 await _context.SaveChangesAsync();
