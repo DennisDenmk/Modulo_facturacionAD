@@ -1,12 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using InvoiceManagementAPI.Data;
+using InvoiceManagementAPI.Model;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using InvoiceManagementAPI.Data;
-using InvoiceManagementAPI.Model;
+using MySqlConnector;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace InvoiceManagementAPI.Controllers
 {
@@ -73,8 +74,6 @@ namespace InvoiceManagementAPI.Controllers
             return NoContent();
         }
 
-        // POST: api/Clientes
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
         public async Task<ActionResult<Cliente>> PostCliente(Cliente cliente)
         {
@@ -83,16 +82,24 @@ namespace InvoiceManagementAPI.Controllers
             {
                 await _context.SaveChangesAsync();
             }
-            catch (DbUpdateException)
+            catch (DbUpdateException ex)
             {
-                if (ClienteExists(cliente.CliCedula))
+                
+                var sqlException = ex.InnerException as MySqlException;
+
+                if (sqlException != null)
                 {
-                    return Conflict();
+                    
+                    if (sqlException.Number == 1062 || sqlException.Message.Contains("Cliente ya registrado"))
+                    {
+                       
+                        return Conflict(new { message = "Error: Cliente ya registrado" });
+                    }
+
+                   return BadRequest(new { message = sqlException.Message });
                 }
-                else
-                {
-                    throw;
-                }
+
+                throw;
             }
 
             return CreatedAtAction("GetCliente", new { id = cliente.CliCedula }, cliente);
