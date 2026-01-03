@@ -31,9 +31,9 @@ namespace InvoiceManagementAPI.Model
         public bool PemEstado { get; set; } = true;
 
         [ForeignKey("EstRuc")]
-        [JsonIgnore]
         public virtual Establecimiento? Establecimiento { get; set; }
 
+        // En las listas sí dejamos JsonIgnore para no sobrecargar datos
         [JsonIgnore]
         public virtual ICollection<Factura>? Facturas { get; set; }
 
