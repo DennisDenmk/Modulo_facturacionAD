@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace InvoiceManagementAPI.Model
@@ -33,6 +34,6 @@ namespace InvoiceManagementAPI.Model
         public bool EstEstado { get; set; }
 
         // Relaciones
-        public virtual ICollection<PuntoEmision> PuntosEmision { get; set; }
+        public virtual ICollection<PuntoEmision>? PuntosEmision { get; set; }
     }
 }

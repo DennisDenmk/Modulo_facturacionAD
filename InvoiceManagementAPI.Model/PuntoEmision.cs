@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace InvoiceManagementAPI.Model
 {
@@ -29,12 +30,14 @@ namespace InvoiceManagementAPI.Model
         [Required]
         public bool PemEstado { get; set; } = true;
 
-        // Relaciones
         [ForeignKey("EstRuc")]
-        public virtual Establecimiento Establecimiento { get; set; }
+        [JsonIgnore]
+        public virtual Establecimiento? Establecimiento { get; set; }
 
-        public virtual ICollection<Factura> Facturas { get; set; }
-        public virtual ICollection<SecuencialFactura> SecuencialesFactura { get; set; }
+        [JsonIgnore]
+        public virtual ICollection<Factura>? Facturas { get; set; }
+
+        [JsonIgnore]
+        public virtual ICollection<SecuencialFactura>? SecuencialesFactura { get; set; }
     }
-
 }
