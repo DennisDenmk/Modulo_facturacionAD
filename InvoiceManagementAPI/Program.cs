@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using InvoiceManagementAPI.Data;
+using InvoiceManagementAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -52,6 +53,12 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
+});
+builder.Services.AddHttpClient<IInventoryService, InventoryService>(client =>
+{
+    // Pon aquí la URL base de la API externa (ej: localhost o servidor real)
+    client.BaseAddress = new Uri("https://api-inventario.up.railway.app/api/");
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
 
 var app = builder.Build();

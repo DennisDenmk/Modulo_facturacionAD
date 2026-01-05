@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization; // <--- OBLIGATORIO
 
 namespace InvoiceManagementAPI.Model
 {
@@ -13,6 +14,7 @@ namespace InvoiceManagementAPI.Model
         [MaxLength(15)]
         public string FacNumeroFactura { get; set; }
 
+        // --- CLAVES FORÁNEAS (Estas SÍ son Required) ---
         [Column("cli_cedula")]
         [MaxLength(10)]
         [Required]
@@ -23,18 +25,18 @@ namespace InvoiceManagementAPI.Model
         [Required]
         public string EstRuc { get; set; }
 
-        // ✅ CORREGIDO: Solo pem_id (int), eliminamos pem_id_punto_emision
         [Column("pem_id")]
         [Required]
         public int PemId { get; set; }
 
-        [Column("fac_fecha_emision")]
-        [Required]
-        public DateTime FacFechaEmision { get; set; } = DateTime.Now;
-
         [Column("tip_id_tipop")]
         [Required]
         public int TipIdTipop { get; set; }
+        // ------------------------------------------------
+
+        [Column("fac_fecha_emision")]
+        [Required]
+        public DateTime FacFechaEmision { get; set; } = DateTime.Now;
 
         [Column("fac_subtotal_sin_iva")]
         [Required]
@@ -59,14 +61,15 @@ namespace InvoiceManagementAPI.Model
         [Column("fac_fecha_impresion")]
         public DateTime? FacFechaImpresion { get; set; }
 
+        // --- CAMPOS DE AUDITORÍA (Hazlos opcionales para evitar error 400) ---
         [Column("fac_usuario_creacion")]
         [MaxLength(50)]
-        [Required]
-        public string FacUsuarioCreacion { get; set; }
+        // [Required] <--- QUITA ESTO SI NO LO ENVÍAS DESDE EL FRONT
+        public string? FacUsuarioCreacion { get; set; } // Agregado '?'
 
         [Column("fac_usuario_modificacion")]
         [MaxLength(50)]
-        public string FacUsuarioModificacion { get; set; }
+        public string? FacUsuarioModificacion { get; set; } // Agregado '?'
 
         [Column("fac_fecha_creacion")]
         [Required]
@@ -75,15 +78,21 @@ namespace InvoiceManagementAPI.Model
         [Column("fac_fecha_modificacion")]
         public DateTime? FacFechaModificacion { get; set; }
 
-        // Relaciones
+        // ==========================================
+        // RELACIONES (Aquí estaba el conflicto principal)
+        // ==========================================
+
         [ForeignKey("CliCedula")]
-        public virtual Cliente Cliente { get; set; }
+        [JsonIgnore] 
+        public virtual Cliente? Cliente { get; set; } // <--- AGREGAR '?'
 
         [ForeignKey("TipIdTipop")]
-        public virtual TipoPago TipoPago { get; set; }
+        [JsonIgnore] 
+        public virtual TipoPago? TipoPago { get; set; } // <--- AGREGAR '?'
 
         [ForeignKey("PemId")]
-        public virtual PuntoEmision PuntoEmision { get; set; }
+        [JsonIgnore] 
+        public virtual PuntoEmision? PuntoEmision { get; set; } // <--- AGREGAR '?'
 
         public virtual ICollection<DetalleFactura> DetallesFactura { get; set; }
     }

@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Text.Json.Serialization; // <--- 1. IMPORTANTE: Agrega esto
 
 namespace InvoiceManagementAPI.Model
 {
@@ -18,6 +19,7 @@ namespace InvoiceManagementAPI.Model
 
         [Column("fac_numero_factura")]
         [MaxLength(15)]
+        // Nota: Al crear, esto se llena automáticamente en el backend, no es necesario que sea requerido en el JSON
         public string FacNumeroFactura { get; set; }
 
         [Column("det_id_producto_externo")]
@@ -54,6 +56,7 @@ namespace InvoiceManagementAPI.Model
 
         // Relaciones
         [ForeignKey("FacNumeroFactura")]
-        public virtual Factura Factura { get; set; }
+        [JsonIgnore] 
+        public virtual Factura? Factura { get; set; } 
     }
 }
