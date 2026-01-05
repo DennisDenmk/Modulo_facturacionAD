@@ -8,19 +8,19 @@ ENV DOTNET_RUNNING_IN_CONTAINER=true
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Copia el csproj y restaura dependencias (mejora cache en builds)
+# Copia el .csproj desde el contexto raíz (optimiza cache)
 COPY ["InvoiceManagementAPI/InvoiceManagementAPI.csproj", "InvoiceManagementAPI/"]
 RUN dotnet restore "InvoiceManagementAPI/InvoiceManagementAPI.csproj"
 
-# Copia todo el código y publica en Release
+# Copia todo el repositorio y publica la app
 COPY . .
 WORKDIR /src/InvoiceManagementAPI
 RUN dotnet publish -c Release -o /app/publish --no-restore /p:PublishTrimmed=false
 
-# Etapa final: copiar artefactos publicados
+# Etapa final: runtime ligero
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 
-# Arranque: permite usar la variable de entorno PORT que Render asigna.
+# Usar la variable PORT que Render proporciona; fallback a 5000 para pruebas locales
 ENTRYPOINT ["sh", "-c", "dotnet InvoiceManagementAPI.dll --urls http://0.0.0.0:${PORT:-5000}"]
