@@ -84,22 +84,8 @@ namespace InvoiceManagementAPI.Controllers
             return CreatedAtAction("GetDetalleFactura", new { id = detalleFactura.DetIdDetalle }, detalleFactura);
         }
 
-        // DELETE: api/DetalleFacturas/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteDetalleFactura(int id)
-        {
-            var detalleFactura = await _context.DetallesFactura.FindAsync(id);
-            if (detalleFactura == null)
-            {
-                return NotFound();
-            }
-
-            _context.DetallesFactura.Remove(detalleFactura);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
+      
+        
         private bool DetalleFacturaExists(int id)
         {
             return _context.DetallesFactura.Any(e => e.DetIdDetalle == id);
