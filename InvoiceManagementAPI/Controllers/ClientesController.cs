@@ -44,13 +44,13 @@ namespace InvoiceManagementAPI.Controllers
         }
 
         // PUT: api/Clientes/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+
         [HttpPut("{id}")]
         public async Task<IActionResult> PutCliente(string id, Cliente cliente)
         {
             if (id != cliente.CliCedula)
             {
-                return BadRequest();
+                return BadRequest(new { message = "La cédula de la URL no coincide con la del cuerpo de la solicitud." });
             }
 
             _context.Entry(cliente).State = EntityState.Modified;
@@ -59,16 +59,18 @@ namespace InvoiceManagementAPI.Controllers
             {
                 await _context.SaveChangesAsync();
             }
-            catch (DbUpdateConcurrencyException)
+            catch (DbUpdateException ex)
             {
-                if (!ClienteExists(id))
+                var sqlException = ex.InnerException as MySqlException;
+                if (sqlException != null)
                 {
-                    return NotFound();
+                    if (sqlException.Number == 1062 || sqlException.Message.Contains("Cliente ya registrado"))
+                    {
+                        return Conflict(new { message = "Error: Cliente ya registrado" });
+                    }
+                    return BadRequest(new { message = sqlException.Message });
                 }
-                else
-                {
-                    throw;
-                }
+                throw;
             }
 
             return NoContent();
