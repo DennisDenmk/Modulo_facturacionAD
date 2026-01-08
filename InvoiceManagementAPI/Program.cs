@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using InvoiceManagementAPI.Data;
 using InvoiceManagementAPI.Services;
+using MySqlConnector;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +19,46 @@ builder.Services.AddDbContext<InvoiceDbContext>(options =>
             errorNumbersToAdd: null
         )
     );
+});
+
+// ============================================
+// ✅ CONFIGURAR ZONA HORARIA GLOBALMENTE
+// ============================================
+builder.Services.AddScoped<InvoiceDbContext>(sp =>
+{
+    var optionsBuilder = new DbContextOptionsBuilder<InvoiceDbContext>();
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
+    optionsBuilder.UseMySql(connectionString,
+        new MySqlServerVersion(new Version(8, 0, 21)),
+        mySqlOptions => mySqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorNumbersToAdd: null
+        )
+    );
+
+    var context = new InvoiceDbContext(optionsBuilder.Options);
+
+    // Establecer zona horaria cuando se crea el contexto
+    try
+    {
+        var connection = context.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+        {
+            connection.Open();
+        }
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SET time_zone = '-05:00'";
+        cmd.ExecuteNonQuery();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠️ No se pudo establecer zona horaria: {ex.Message}");
+    }
+
+    return context;
 });
 
 // ============================================
@@ -54,6 +95,7 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader();
     });
 });
+
 builder.Services.AddHttpClient<IInventoryService, InventoryService>(client =>
 {
     // Pon aquí la URL base de la API externa (ej: localhost o servidor real)
@@ -66,7 +108,6 @@ var app = builder.Build();
 // ============================================
 // MIDDLEWARE PIPELINE
 // ============================================
-
 // Habilitar Swagger en desarrollo
 //if (app.Environment.IsDevelopment())
 {
@@ -74,7 +115,7 @@ var app = builder.Build();
     app.UseSwaggerUI(c =>
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "Invoice Management API v1");
-        c.RoutePrefix = "swagger"; 
+        c.RoutePrefix = "swagger";
     });
 }
 
@@ -88,7 +129,7 @@ app.UseAuthorization();
 app.MapControllers();
 
 // ============================================
-// VERIFICAR CONEXIÓN A LA BASE DE DATOS
+// VERIFICAR CONEXIÓN A LA BASE DE DATOS Y ZONA HORARIA
 // ============================================
 using (var scope = app.Services.CreateScope())
 {
@@ -99,6 +140,24 @@ using (var scope = app.Services.CreateScope())
         if (context.Database.CanConnect())
         {
             Console.WriteLine("✅ Conexión exitosa a la base de datos MySQL");
+
+            // Verificar zona horaria
+            var connection = context.Database.GetDbConnection();
+
+            // ✅ CORREGIDO: Verificar si ya está abierta antes de abrir
+            if (connection.State != System.Data.ConnectionState.Open)
+            {
+                connection.Open();
+            }
+
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT @@session.time_zone, NOW()";
+            using var reader = cmd.ExecuteReader();
+            if (reader.Read())
+            {
+                Console.WriteLine($"✅ Zona horaria configurada: {reader.GetString(0)}");
+                Console.WriteLine($"✅ Hora actual del servidor: {reader.GetDateTime(1)}");
+            }
         }
         else
         {
