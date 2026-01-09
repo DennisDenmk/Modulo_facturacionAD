@@ -6,29 +6,16 @@ using MySqlConnector;
 var builder = WebApplication.CreateBuilder(args);
 
 // ============================================
-// CONFIGURACIÓN DE LA BASE DE DATOS
+// 1. CONFIGURACIÓN DE LA BASE DE DATOS Y ZONA HORARIA
 // ============================================
-builder.Services.AddDbContext<InvoiceDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-    options.UseMySql(connectionString,
-        new MySqlServerVersion(new Version(8, 0, 21)),
-        mySqlOptions => mySqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(10),
-            errorNumbersToAdd: null
-        )
-    );
-});
-
-// ============================================
-// ✅ CONFIGURAR ZONA HORARIA GLOBALMENTE
-// ============================================
+// Usamos AddScoped con una fábrica para configurar la zona horaria en cada conexión
 builder.Services.AddScoped<InvoiceDbContext>(sp =>
 {
     var optionsBuilder = new DbContextOptionsBuilder<InvoiceDbContext>();
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var connectionString = configuration.GetConnectionString("DefaultConnection");
 
+    // Configuración estándar de MySQL
     optionsBuilder.UseMySql(connectionString,
         new MySqlServerVersion(new Version(8, 0, 21)),
         mySqlOptions => mySqlOptions.EnableRetryOnFailure(
@@ -40,34 +27,28 @@ builder.Services.AddScoped<InvoiceDbContext>(sp =>
 
     var context = new InvoiceDbContext(optionsBuilder.Options);
 
-    // Establecer zona horaria cuando se crea el contexto
+    // ✅ FORZAR ZONA HORARIA DE FORMA SEGURA (-05:00 Ecuador/Colombia)
+    // Esto se ejecuta cada vez que se solicita el contexto
     try
     {
-        var connection = context.Database.GetDbConnection();
-        if (connection.State != System.Data.ConnectionState.Open)
-        {
-            connection.Open();
-        }
-
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SET time_zone = '-05:00'";
-        cmd.ExecuteNonQuery();
+        context.Database.OpenConnection(); // Abrimos conexión explícitamente
+        context.Database.ExecuteSqlRaw("SET time_zone = '-05:00'");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"⚠️ No se pudo establecer zona horaria: {ex.Message}");
+        // Logueamos el error pero no detenemos la app, por si es un fallo transitorio
+        Console.WriteLine($"⚠️ Advertencia: No se pudo establecer la zona horaria MySQL: {ex.Message}");
     }
 
     return context;
 });
 
 // ============================================
-// CONFIGURACIÓN DE CONTROLADORES Y SWAGGER
+// 2. SERVICIOS Y SWAGGER
 // ============================================
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        // Configurar para manejar referencias circulares
         options.JsonSerializerOptions.ReferenceHandler =
             System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
@@ -79,12 +60,12 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "Invoice Management API",
         Version = "v1",
-        Description = "API para gestión de facturación"
+        Description = "API desplegada en Azure con MySQL Hostinger"
     });
 });
 
 // ============================================
-// CONFIGURACIÓN DE CORS (si necesitas consumir desde frontend)
+// 3. CORS Y CLIENTES HTTP
 // ============================================
 builder.Services.AddCors(options =>
 {
@@ -98,7 +79,6 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddHttpClient<IInventoryService, InventoryService>(client =>
 {
-    // Pon aquí la URL base de la API externa (ej: localhost o servidor real)
     client.BaseAddress = new Uri("https://api-inventario.up.railway.app/api/");
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
@@ -106,67 +86,50 @@ builder.Services.AddHttpClient<IInventoryService, InventoryService>(client =>
 var app = builder.Build();
 
 // ============================================
-// MIDDLEWARE PIPELINE
+// 4. PIPELINE DE LA APLICACIÓN
 // ============================================
-// Habilitar Swagger en desarrollo
-//if (app.Environment.IsDevelopment())
+
+// Habilitar Swagger SIEMPRE (incluso en producción para Azure)
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Invoice Management API v1");
-        c.RoutePrefix = "swagger";
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Invoice Management API v1");
+    c.RoutePrefix = "swagger"; // Accesible en /swagger
+});
 
-// app.UseHttpsRedirection();
-
-// Habilitar CORS
 app.UseCors("AllowAll");
-
 app.UseAuthorization();
-
 app.MapControllers();
 
 // ============================================
-// VERIFICAR CONEXIÓN A LA BASE DE DATOS Y ZONA HORARIA
+// 5. DIAGNÓSTICO DE INICIO (Crucial para Azure)
 // ============================================
 using (var scope = app.Services.CreateScope())
 {
-    var context = scope.ServiceProvider.GetRequiredService<InvoiceDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
-        // Intenta conectar a la base de datos
+        var context = scope.ServiceProvider.GetRequiredService<InvoiceDbContext>();
+
+        // Verificación simple de conexión
         if (context.Database.CanConnect())
         {
-            Console.WriteLine("✅ Conexión exitosa a la base de datos MySQL");
+            Console.WriteLine("✅ [AZURE DIAGNOSTIC] Conexión a Hostinger EXITOSA.");
 
-            // Verificar zona horaria
-            var connection = context.Database.GetDbConnection();
-
-            // ✅ CORREGIDO: Verificar si ya está abierta antes de abrir
-            if (connection.State != System.Data.ConnectionState.Open)
-            {
-                connection.Open();
-            }
-
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT @@session.time_zone, NOW()";
-            using var reader = cmd.ExecuteReader();
-            if (reader.Read())
-            {
-                Console.WriteLine($"✅ Zona horaria configurada: {reader.GetString(0)}");
-                Console.WriteLine($"✅ Hora actual del servidor: {reader.GetDateTime(1)}");
-            }
+            // Verificar que la hora sea la correcta (-05:00)
+            var fechaDb = await context.Database.SqlQueryRaw<DateTime>("SELECT NOW()").FirstOrDefaultAsync();
+            Console.WriteLine($"✅ [AZURE DIAGNOSTIC] Hora en BD: {fechaDb}");
         }
         else
         {
-            Console.WriteLine("❌ No se pudo conectar a la base de datos");
+            Console.WriteLine("❌ [AZURE DIAGNOSTIC] No se pudo conectar a la base de datos.");
         }
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"❌ Error al conectar a la base de datos: {ex.Message}");
+        Console.WriteLine($"❌ [AZURE DIAGNOSTIC] CRITICAL ERROR: {ex.Message}");
+        if (ex.InnerException != null)
+            Console.WriteLine($"   --> Inner: {ex.InnerException.Message}");
     }
 }
 
