@@ -6,16 +6,21 @@ using MySqlConnector;
 var builder = WebApplication.CreateBuilder(args);
 
 // ============================================
-// 1. CONFIGURACIÓN DE LA BASE DE DATOS Y ZONA HORARIA
+// 1. FORZAR PUERTO 8080 (CRUCIAL PARA AZURE LINUX)
 // ============================================
-// Usamos AddScoped con una fábrica para configurar la zona horaria en cada conexión
+// Azure manda el tráfico al puerto 8080. Si escuchamos en el 5000, da error.
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
+// ============================================
+// 2. CONFIGURACIÓN DE BDD Y ZONA HORARIA
+// ============================================
 builder.Services.AddScoped<InvoiceDbContext>(sp =>
 {
     var optionsBuilder = new DbContextOptionsBuilder<InvoiceDbContext>();
     var configuration = sp.GetRequiredService<IConfiguration>();
     var connectionString = configuration.GetConnectionString("DefaultConnection");
 
-    // Configuración estándar de MySQL
     optionsBuilder.UseMySql(connectionString,
         new MySqlServerVersion(new Version(8, 0, 21)),
         mySqlOptions => mySqlOptions.EnableRetryOnFailure(
@@ -27,24 +32,22 @@ builder.Services.AddScoped<InvoiceDbContext>(sp =>
 
     var context = new InvoiceDbContext(optionsBuilder.Options);
 
-    // ✅ FORZAR ZONA HORARIA DE FORMA SEGURA (-05:00 Ecuador/Colombia)
-    // Esto se ejecuta cada vez que se solicita el contexto
+    // Intentar forzar zona horaria de forma segura
     try
     {
-        context.Database.OpenConnection(); // Abrimos conexión explícitamente
+        context.Database.OpenConnection();
         context.Database.ExecuteSqlRaw("SET time_zone = '-05:00'");
     }
     catch (Exception ex)
     {
-        // Logueamos el error pero no detenemos la app, por si es un fallo transitorio
-        Console.WriteLine($"⚠️ Advertencia: No se pudo establecer la zona horaria MySQL: {ex.Message}");
+        Console.WriteLine($"⚠️ Advertencia Zona Horaria: {ex.Message}");
     }
 
     return context;
 });
 
 // ============================================
-// 2. SERVICIOS Y SWAGGER
+// 3. SERVICIOS
 // ============================================
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -58,22 +61,17 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
     {
-        Title = "Invoice Management API",
+        Title = "Invoice API",
         Version = "v1",
-        Description = "API desplegada en Azure con MySQL Hostinger"
+        Description = "API Azure + Hostinger"
     });
 });
 
-// ============================================
-// 3. CORS Y CLIENTES HTTP
-// ============================================
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
     });
 });
 
@@ -86,15 +84,13 @@ builder.Services.AddHttpClient<IInventoryService, InventoryService>(client =>
 var app = builder.Build();
 
 // ============================================
-// 4. PIPELINE DE LA APLICACIÓN
+// 4. PIPELINE
 // ============================================
-
-// Habilitar Swagger SIEMPRE (incluso en producción para Azure)
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Invoice Management API v1");
-    c.RoutePrefix = "swagger"; // Accesible en /swagger
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Invoice API v1");
+    c.RoutePrefix = "swagger";
 });
 
 app.UseCors("AllowAll");
@@ -102,34 +98,36 @@ app.UseAuthorization();
 app.MapControllers();
 
 // ============================================
-// 5. DIAGNÓSTICO DE INICIO (Crucial para Azure)
+// 5. DIAGNÓSTICO CORREGIDO
 // ============================================
 using (var scope = app.Services.CreateScope())
 {
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
         var context = scope.ServiceProvider.GetRequiredService<InvoiceDbContext>();
 
-        // Verificación simple de conexión
         if (context.Database.CanConnect())
         {
             Console.WriteLine("✅ [AZURE DIAGNOSTIC] Conexión a Hostinger EXITOSA.");
 
-            // Verificar que la hora sea la correcta (-05:00)
-            var fechaDb = await context.Database.SqlQueryRaw<DateTime>("SELECT NOW()").FirstOrDefaultAsync();
-            Console.WriteLine($"✅ [AZURE DIAGNOSTIC] Hora en BD: {fechaDb}");
+            // Usamos ADO.NET puro para evitar el error de Entity Framework
+            var connection = context.Database.GetDbConnection();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT NOW()";
+
+            if (connection.State != System.Data.ConnectionState.Open) connection.Open();
+
+            var fecha = cmd.ExecuteScalar();
+            Console.WriteLine($"✅ [AZURE DIAGNOSTIC] Hora Servidor BDD: {fecha}");
         }
         else
         {
-            Console.WriteLine("❌ [AZURE DIAGNOSTIC] No se pudo conectar a la base de datos.");
+            Console.WriteLine("❌ [AZURE DIAGNOSTIC] Falló la conexión.");
         }
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"❌ [AZURE DIAGNOSTIC] CRITICAL ERROR: {ex.Message}");
-        if (ex.InnerException != null)
-            Console.WriteLine($"   --> Inner: {ex.InnerException.Message}");
+        Console.WriteLine($"❌ [AZURE DIAGNOSTIC] ERROR: {ex.Message}");
     }
 }
 
