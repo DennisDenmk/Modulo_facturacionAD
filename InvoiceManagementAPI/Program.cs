@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using InvoiceManagementAPI.Data;
 using InvoiceManagementAPI.Services;
+using InvoiceManagementAPI.Middleware;
 using MySqlConnector;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,7 +9,6 @@ var builder = WebApplication.CreateBuilder(args);
 // ============================================
 // 1. FORZAR PUERTO 8080 (CRUCIAL PARA AZURE LINUX)
 // ============================================
-// Azure manda el tráfico al puerto 8080. Si escuchamos en el 5000, da error.
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
@@ -47,7 +47,12 @@ builder.Services.AddScoped<InvoiceDbContext>(sp =>
 });
 
 // ============================================
-// 3. SERVICIOS
+// 3. SERVICIOS DE SEGURIDAD (NUEVO)
+// ============================================
+builder.Services.AddHttpClient<ISecurityApiService, SecurityApiService>();
+
+// ============================================
+// 4. SERVICIOS EXISTENTES
 // ============================================
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -57,16 +62,48 @@ builder.Services.AddControllers()
     });
 
 builder.Services.AddEndpointsApiExplorer();
+
+// ============================================
+// 5. SWAGGER CON SEGURIDAD (ACTUALIZADO)
+// ============================================
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
     {
         Title = "Invoice API",
         Version = "v1",
-        Description = "API Azure + Hostinger"
+        Description = "API Azure + Hostinger con Seguridad UTN"
+    });
+
+    // 🔒 Configuración de seguridad Bearer Token en Swagger
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header usando Bearer scheme. Ejemplo: \"Bearer {token}\"",
+        Name = "Authorization",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
     });
 });
 
+// ============================================
+// 6. CORS
+// ============================================
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -75,6 +112,9 @@ builder.Services.AddCors(options =>
     });
 });
 
+// ============================================
+// 7. HTTP CLIENT PARA INVENTARIO
+// ============================================
 builder.Services.AddHttpClient<IInventoryService, InventoryService>(client =>
 {
     client.BaseAddress = new Uri("https://api-inventario.up.railway.app/api/");
@@ -84,7 +124,7 @@ builder.Services.AddHttpClient<IInventoryService, InventoryService>(client =>
 var app = builder.Build();
 
 // ============================================
-// 4. PIPELINE
+// 8. PIPELINE MIDDLEWARE
 // ============================================
 app.UseSwagger();
 app.UseSwaggerUI(c =>
@@ -94,11 +134,18 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseCors("AllowAll");
+
+// ============================================
+// 🔒 MIDDLEWARE DE SEGURIDAD (NUEVO)
+// ============================================
+// ⚠️ DESCOMENTA ESTA LÍNEA PARA ACTIVAR SEGURIDAD:
+ app.UseSecurityValidation();
+
 app.UseAuthorization();
 app.MapControllers();
 
 // ============================================
-// 5. DIAGNÓSTICO CORREGIDO
+// 9. DIAGNÓSTICO DE CONEXIÓN
 // ============================================
 using (var scope = app.Services.CreateScope())
 {
@@ -110,7 +157,6 @@ using (var scope = app.Services.CreateScope())
         {
             Console.WriteLine("✅ [AZURE DIAGNOSTIC] Conexión a Hostinger EXITOSA.");
 
-            // Usamos ADO.NET puro para evitar el error de Entity Framework
             var connection = context.Database.GetDbConnection();
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT NOW()";
@@ -130,5 +176,12 @@ using (var scope = app.Services.CreateScope())
         Console.WriteLine($"❌ [AZURE DIAGNOSTIC] ERROR: {ex.Message}");
     }
 }
+
+// ============================================
+// 10. DIAGNÓSTICO DE SEGURIDAD (NUEVO)
+// ============================================
+var securityEnabled = app.Configuration.GetValue<bool>("Security:EnableSecurity", false);
+Console.WriteLine($"🔒 [SECURITY] Estado: {(securityEnabled ? "ACTIVADA" : "DESACTIVADA")}");
+Console.WriteLine($"🔒 [SECURITY] Módulo ID: {app.Configuration.GetValue<int>("Security:ModuloId", 0)}");
 
 app.Run();
