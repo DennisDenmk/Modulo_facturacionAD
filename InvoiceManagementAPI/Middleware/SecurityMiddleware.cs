@@ -15,28 +15,59 @@ namespace InvoiceManagementAPI.Middleware
 
         public async Task InvokeAsync(HttpContext context, ISecurityApiService securityService, IConfiguration configuration)
         {
-            // Rutas públicas que NO requieren autenticación
-            var publicPaths = new[]
+            var path = context.Request.Path.Value?.ToLower() ?? "";
+            var method = context.Request.Method.ToUpper();
+
+            // ============================================
+            // 1. RUTAS SIEMPRE PÚBLICAS (todos los métodos)
+            // ============================================
+            var alwaysPublicPaths = new[]
             {
                 "/api/auth/login",
-                "/swagger",
-                "/api/auth/validate-token"
+                "/api/auth/validate-token",
+                "/swagger"
             };
 
-            var path = context.Request.Path.Value?.ToLower() ?? "";
-
-            // Si es una ruta pública, continuar sin validar
-            if (publicPaths.Any(p => path.StartsWith(p.ToLower())))
+            if (alwaysPublicPaths.Any(p => path.StartsWith(p.ToLower())))
             {
+                _logger.LogInformation($"✅ Ruta pública permitida: {method} {path}");
                 await _next(context);
                 return;
             }
+
+            // ============================================
+            // 2. ENDPOINTS PÚBLICOS SOLO PARA GET
+            // ============================================
+            if (method == "GET")
+            {
+                var publicGetEndpoints = new[]
+                {
+                    "/api/clientes",
+                    "/api/facturas",
+                    "/api/puntoemisions",
+                    "/api/establecimientos",
+                    "/api/masterauditorias"
+                };
+
+                if (publicGetEndpoints.Any(p => path.StartsWith(p.ToLower())))
+                {
+                    _logger.LogInformation($"✅ GET público permitido: {path}");
+                    await _next(context);
+                    return;
+                }
+            }
+
+            // ============================================
+            // 3. RESTO DE MÉTODOS REQUIEREN AUTENTICACIÓN
+            // ============================================
+            _logger.LogInformation($"🔒 Validando token para: {method} {path}");
 
             // Obtener el token del header Authorization
             var token = context.Request.Headers["Authorization"].FirstOrDefault()?.Split(" ").Last();
 
             if (string.IsNullOrWhiteSpace(token))
             {
+                _logger.LogWarning($"❌ Token no proporcionado para: {method} {path}");
                 context.Response.StatusCode = 401;
                 context.Response.ContentType = "application/json";
                 await context.Response.WriteAsJsonAsync(new
@@ -48,11 +79,12 @@ namespace InvoiceManagementAPI.Middleware
             }
 
             // Validar el token con la API de seguridad
-            var moduloId = configuration.GetValue<int>("Security:ModuloId", 2);
+            var moduloId = configuration.GetValue<int>("Security:ModuloId", 5);
             var isValid = await securityService.ValidarTokenAsync(token, moduloId);
 
             if (!isValid)
             {
+                _logger.LogWarning($"❌ Token inválido para: {method} {path}");
                 context.Response.StatusCode = 401;
                 context.Response.ContentType = "application/json";
                 await context.Response.WriteAsJsonAsync(new
@@ -64,6 +96,7 @@ namespace InvoiceManagementAPI.Middleware
             }
 
             // Token válido, continuar con la petición
+            _logger.LogInformation($"✅ Token válido. Permitiendo acceso a: {method} {path}");
             await _next(context);
         }
     }
