@@ -495,66 +495,41 @@ namespace InvoiceManagementAPI.Controllers
         {
             try
             {
-                // Validar que el código de producto no esté vacío
                 if (string.IsNullOrWhiteSpace(codigoProducto))
                 {
-                    return BadRequest(new
-                    {
-                        success = false,
-                        message = "El código de producto es requerido"
-                    });
+                    return BadRequest(new { success = false, message = "El código de producto es requerido" });
                 }
 
-                // Buscar facturas que tengan el producto
                 var facturas = await _context.Facturas
                     .Include(f => f.DetallesFactura)
+                    // 1. Filtro Padre: Selecciona las facturas que contienen el producto
                     .Where(f => f.DetallesFactura.Any(d => d.DetCodigoProducto == codigoProducto))
                     .OrderByDescending(f => f.FacFechaEmision)
                     .Select(f => new
                     {
-                        // Datos de la factura
+                        // Datos de Cabecera (Factura)
                         facNumeroFactura = f.FacNumeroFactura,
-                        cliCedula = f.CliCedula,
-                        estRuc = f.EstRuc,
-                        pemId = f.PemId,
-                        tipIdTipop = f.TipIdTipop,
                         facFechaEmision = f.FacFechaEmision,
-                        facSubtotalSinIva = f.FacSubtotalSinIva,
-                        facSubtotalConIva = f.FacSubtotalConIva,
-                        facIva = f.FacIva,
                         facTotal = f.FacTotal,
-                        facEstadoFactura = f.FacEstadoFactura,
-                        facUsuarioCreacion = f.FacUsuarioCreacion,
-                        facFechaCreacion = f.FacFechaCreacion,
+                        // ... puedes dejar el resto de campos de cabecera si los necesitas ...
 
-                        // Detalles de la factura
-                        detallesFactura = f.DetallesFactura.Select(d => new
-                        {
-                            detIdDetalle = d.DetIdDetalle,
-                            facNumeroFactura = d.FacNumeroFactura,
-                            detIdProductoExterno = d.DetIdProductoExterno,
-                            detCodigoProducto = d.DetCodigoProducto,
-                            detNombreProducto = d.DetNombreProducto,
-                            detCantidad = d.DetCantidad,
-                            detPrecioUnitario = d.DetPrecioUnitario,
-                            detGrabaIva = d.DetGrabaIva,
-                            detSubtotal = d.DetSubtotal,
-                            detPorcentajeIva = d.DetPorcentajeIva,
-                            detValorIva = d.DetValorIva,
-                            detTotal = d.DetTotal
-                        }).ToList()
+                        // 2. Filtro Hijo: AQUÍ ESTÁ LA SOLUCIÓN
+                        // Solo selecciona los detalles que coinciden con el código buscado
+                        detallesFactura = f.DetallesFactura
+                            .Where(d => d.DetCodigoProducto == codigoProducto) // <--- FILTRO APLICADO AQUI
+                            .Select(d => new
+                            {
+                                detNombreProducto = d.DetNombreProducto,
+                                detCodigoProducto = d.DetCodigoProducto,
+                                detCantidad = d.DetCantidad, // <--- Lo que te interesa
+                                detTotal = d.DetTotal
+                            }).ToList()
                     })
                     .ToListAsync();
 
-                // Verificar si se encontraron facturas
                 if (!facturas.Any())
                 {
-                    return Ok(new
-                    {
-                        success = true,
-                        message = $"No se encontraron facturas con el producto '{codigoProducto}'",
-                        data = new List<object>()
-                    });
+                    return Ok(new { success = true, message = $"No se encontraron facturas con el producto '{codigoProducto}'", data = new List<object>() });
                 }
 
                 return Ok(new
@@ -566,12 +541,7 @@ namespace InvoiceManagementAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    success = false,
-                    message = "Error al buscar facturas por producto",
-                    error = ex.Message
-                });
+                return StatusCode(500, new { success = false, message = "Error", error = ex.Message });
             }
         }
 
