@@ -484,6 +484,97 @@ namespace InvoiceManagementAPI.Controllers
             }
         }
 
+        /// <summary>
+        /// Obtiene todas las facturas que contienen un producto específico
+        /// Retorna solo la factura y sus detalles
+        /// </summary>
+        /// <param name="codigoProducto">Código del producto (ej: PRD-0002)</param>
+        /// <returns>Lista de facturas con sus detalles</returns>
+        [HttpGet("por-producto/{codigoProducto}")]
+        public async Task<ActionResult> GetFacturasPorProducto(string codigoProducto)
+        {
+            try
+            {
+                // Validar que el código de producto no esté vacío
+                if (string.IsNullOrWhiteSpace(codigoProducto))
+                {
+                    return BadRequest(new
+                    {
+                        success = false,
+                        message = "El código de producto es requerido"
+                    });
+                }
+
+                // Buscar facturas que tengan el producto
+                var facturas = await _context.Facturas
+                    .Include(f => f.DetallesFactura)
+                    .Where(f => f.DetallesFactura.Any(d => d.DetCodigoProducto == codigoProducto))
+                    .OrderByDescending(f => f.FacFechaEmision)
+                    .Select(f => new
+                    {
+                        // Datos de la factura
+                        facNumeroFactura = f.FacNumeroFactura,
+                        cliCedula = f.CliCedula,
+                        estRuc = f.EstRuc,
+                        pemId = f.PemId,
+                        tipIdTipop = f.TipIdTipop,
+                        facFechaEmision = f.FacFechaEmision,
+                        facSubtotalSinIva = f.FacSubtotalSinIva,
+                        facSubtotalConIva = f.FacSubtotalConIva,
+                        facIva = f.FacIva,
+                        facTotal = f.FacTotal,
+                        facEstadoFactura = f.FacEstadoFactura,
+                        facUsuarioCreacion = f.FacUsuarioCreacion,
+                        facFechaCreacion = f.FacFechaCreacion,
+
+                        // Detalles de la factura
+                        detallesFactura = f.DetallesFactura.Select(d => new
+                        {
+                            detIdDetalle = d.DetIdDetalle,
+                            facNumeroFactura = d.FacNumeroFactura,
+                            detIdProductoExterno = d.DetIdProductoExterno,
+                            detCodigoProducto = d.DetCodigoProducto,
+                            detNombreProducto = d.DetNombreProducto,
+                            detCantidad = d.DetCantidad,
+                            detPrecioUnitario = d.DetPrecioUnitario,
+                            detGrabaIva = d.DetGrabaIva,
+                            detSubtotal = d.DetSubtotal,
+                            detPorcentajeIva = d.DetPorcentajeIva,
+                            detValorIva = d.DetValorIva,
+                            detTotal = d.DetTotal
+                        }).ToList()
+                    })
+                    .ToListAsync();
+
+                // Verificar si se encontraron facturas
+                if (!facturas.Any())
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        message = $"No se encontraron facturas con el producto '{codigoProducto}'",
+                        data = new List<object>()
+                    });
+                }
+
+                return Ok(new
+                {
+                    success = true,
+                    message = $"Se encontraron {facturas.Count} facturas con el producto '{codigoProducto}'",
+                    data = facturas
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Error al buscar facturas por producto",
+                    error = ex.Message
+                });
+            }
+        }
+
 
 
 
