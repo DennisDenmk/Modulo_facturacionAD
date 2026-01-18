@@ -136,12 +136,10 @@ app.UseSwaggerUI(c =>
 app.UseCors("AllowAll");
 
 // ============================================
-// 🔒 MIDDLEWARE DE SEGURIDAD (NUEVO)
+// 🔒 MIDDLEWARE DE SEGURIDAD
 // ============================================
-// ⚠️ DESCOMENTA ESTA LÍNEA PARA ACTIVAR SEGURIDAD:
- app.UseSecurityValidation();
+app.UseSecurityValidation(); // ✅ Activado - Tu middleware personalizado maneja todo
 
-app.UseAuthorization();
 app.MapControllers();
 
 // ============================================
@@ -178,7 +176,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ============================================
-// 10. DIAGNÓSTICO DE SEGURIDAD (NUEVO)
+// 10. DIAGNÓSTICO DE SEGURIDAD
 // ============================================
 var securityEnabled = app.Configuration.GetValue<bool>("Security:EnableSecurity", false);
 Console.WriteLine($"🔒 [SECURITY] Estado: {(securityEnabled ? "ACTIVADA" : "DESACTIVADA")}");

@@ -191,9 +191,8 @@ namespace InvoiceManagementAPI.Controllers
 
                 return Ok(new
                 {
-                    success = true,
-                    total = clientes.Count,
-                    data = clientes
+                    success = true
+                    
                 });
             }
             catch (Exception ex)
@@ -216,6 +215,50 @@ namespace InvoiceManagementAPI.Controllers
         public class CambioEstadoRequest
         {
             public bool Estado { get; set; }
+        }
+
+        // ==================================================
+        // GET: api/Clientes/clientes-a-credito
+        // Obtener clientes que son de tipo crédito
+        // ==================================================
+        [HttpGet("clientes-tipo-credito")]
+        public async Task<ActionResult> GetClientesACredito()
+        {
+            try
+            {
+                var clientesCredito = await _context.Clientes
+                    .Include(c => c.TipoCliente)
+                    .Where(c => c.CliEstado == true &&
+                               c.TipoCliente != null &&
+                               c.TipoCliente.TicDescripcion.ToLower().Contains("crédito"))
+                    .Select(c => new
+                    {
+                        c.CliCedula,
+                        c.CliNombre,
+                        c.CliFechaNacimiento,
+                        c.TicIdTipoc,
+                        c.CliDireccion,
+                        c.CliTelefono,
+                        c.CliEmail,
+                        TipoCliente = new
+                        {
+                            c.TipoCliente.TicIdTipoc,
+                            c.TipoCliente.TicDescripcion
+                        }
+                    })
+                    .ToListAsync();
+
+                return Ok(clientesCredito);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Error al obtener clientes a crédito",
+                    error = ex.Message
+                });
+            }
         }
 
     }
