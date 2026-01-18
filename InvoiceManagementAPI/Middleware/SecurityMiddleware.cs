@@ -42,10 +42,8 @@ namespace InvoiceManagementAPI.Middleware
             {
                 var publicGetEndpoints = new[]
                 {
-                    "/api/clientes",
+                    "/api/clientes",        // 👈 Incluye /api/clientes y /api/clientes/{id}
                     "/api/facturas",
-                    "/api/puntoemisions",
-                    "/api/establecimientos",
                     "/api/masterauditorias"
                 };
 
