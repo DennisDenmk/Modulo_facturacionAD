@@ -1,33 +1,25 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using InvoiceManagementAPI.Data;
 using InvoiceManagementAPI.Services;
+using InvoiceManagementAPI.Middleware;
 using MySqlConnector;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ============================================
-// CONFIGURACIÓN DE LA BASE DE DATOS
+// 1. FORZAR PUERTO 8080 (CRUCIAL PARA AZURE LINUX)
 // ============================================
-builder.Services.AddDbContext<InvoiceDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-    options.UseMySql(connectionString,
-        new MySqlServerVersion(new Version(8, 0, 21)),
-        mySqlOptions => mySqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(10),
-            errorNumbersToAdd: null
-        )
-    );
-});
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 // ============================================
-// ✅ CONFIGURAR ZONA HORARIA GLOBALMENTE
+// 2. CONFIGURACIÓN DE BDD Y ZONA HORARIA
 // ============================================
 builder.Services.AddScoped<InvoiceDbContext>(sp =>
 {
     var optionsBuilder = new DbContextOptionsBuilder<InvoiceDbContext>();
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var connectionString = configuration.GetConnectionString("DefaultConnection");
 
     optionsBuilder.UseMySql(connectionString,
         new MySqlServerVersion(new Version(8, 0, 21)),
@@ -40,65 +32,91 @@ builder.Services.AddScoped<InvoiceDbContext>(sp =>
 
     var context = new InvoiceDbContext(optionsBuilder.Options);
 
-    // Establecer zona horaria cuando se crea el contexto
+    // Intentar forzar zona horaria de forma segura
     try
     {
-        var connection = context.Database.GetDbConnection();
-        if (connection.State != System.Data.ConnectionState.Open)
-        {
-            connection.Open();
-        }
-
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SET time_zone = '-05:00'";
-        cmd.ExecuteNonQuery();
+        context.Database.OpenConnection();
+        context.Database.ExecuteSqlRaw("SET time_zone = '-05:00'");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"⚠️ No se pudo establecer zona horaria: {ex.Message}");
+        Console.WriteLine($"⚠️ Advertencia Zona Horaria: {ex.Message}");
     }
 
     return context;
 });
 
 // ============================================
-// CONFIGURACIÓN DE CONTROLADORES Y SWAGGER
+// 3. SERVICIOS DE SEGURIDAD (NUEVO)
+// ============================================
+builder.Services.AddHttpClient<ISecurityApiService, SecurityApiService>();
+
+// ============================================
+// 4. SERVICIOS EXISTENTES
 // ============================================
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        // Configurar para manejar referencias circulares
         options.JsonSerializerOptions.ReferenceHandler =
             System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
 
 builder.Services.AddEndpointsApiExplorer();
+
+// ============================================
+// 5. SWAGGER CON SEGURIDAD (ACTUALIZADO)
+// ============================================
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
     {
-        Title = "Invoice Management API",
+        Title = "Invoice API",
         Version = "v1",
-        Description = "API para gestión de facturación"
+        Description = "API Azure + Hostinger con Seguridad UTN"
+    });
+
+    // 🔒 Configuración de seguridad Bearer Token en Swagger
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header usando Bearer scheme. Ejemplo: \"Bearer {token}\"",
+        Name = "Authorization",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
     });
 });
 
 // ============================================
-// CONFIGURACIÓN DE CORS (si necesitas consumir desde frontend)
+// 6. CORS
 // ============================================
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
     });
 });
 
+// ============================================
+// 7. HTTP CLIENT PARA INVENTARIO
+// ============================================
 builder.Services.AddHttpClient<IInventoryService, InventoryService>(client =>
 {
-    // Pon aquí la URL base de la API externa (ej: localhost o servidor real)
     client.BaseAddress = new Uri("https://api-inventario.up.railway.app/api/");
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
@@ -106,68 +124,62 @@ builder.Services.AddHttpClient<IInventoryService, InventoryService>(client =>
 var app = builder.Build();
 
 // ============================================
-// MIDDLEWARE PIPELINE
+// 8. PIPELINE MIDDLEWARE
 // ============================================
-// Habilitar Swagger en desarrollo
-//if (app.Environment.IsDevelopment())
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Invoice Management API v1");
-        c.RoutePrefix = "swagger";
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Invoice API v1");
+    c.RoutePrefix = "swagger";
+});
 
-// app.UseHttpsRedirection();
-
-// Habilitar CORS
 app.UseCors("AllowAll");
 
-app.UseAuthorization();
+// ============================================
+// 🔒 MIDDLEWARE DE SEGURIDAD
+// ============================================
+app.UseSecurityValidation(); // ✅ Activado - Tu middleware personalizado maneja todo
 
 app.MapControllers();
 
 // ============================================
-// VERIFICAR CONEXIÓN A LA BASE DE DATOS Y ZONA HORARIA
+// 9. DIAGNÓSTICO DE CONEXIÓN
 // ============================================
 using (var scope = app.Services.CreateScope())
 {
-    var context = scope.ServiceProvider.GetRequiredService<InvoiceDbContext>();
     try
     {
-        // Intenta conectar a la base de datos
+        var context = scope.ServiceProvider.GetRequiredService<InvoiceDbContext>();
+
         if (context.Database.CanConnect())
         {
-            Console.WriteLine("✅ Conexión exitosa a la base de datos MySQL");
+            Console.WriteLine("✅ [AZURE DIAGNOSTIC] Conexión a Hostinger EXITOSA.");
 
-            // Verificar zona horaria
             var connection = context.Database.GetDbConnection();
-
-            // ✅ CORREGIDO: Verificar si ya está abierta antes de abrir
-            if (connection.State != System.Data.ConnectionState.Open)
-            {
-                connection.Open();
-            }
-
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT @@session.time_zone, NOW()";
-            using var reader = cmd.ExecuteReader();
-            if (reader.Read())
-            {
-                Console.WriteLine($"✅ Zona horaria configurada: {reader.GetString(0)}");
-                Console.WriteLine($"✅ Hora actual del servidor: {reader.GetDateTime(1)}");
-            }
+            cmd.CommandText = "SELECT NOW()";
+
+            if (connection.State != System.Data.ConnectionState.Open) connection.Open();
+
+            var fecha = cmd.ExecuteScalar();
+            Console.WriteLine($"✅ [AZURE DIAGNOSTIC] Hora Servidor BDD: {fecha}");
         }
         else
         {
-            Console.WriteLine("❌ No se pudo conectar a la base de datos");
+            Console.WriteLine("❌ [AZURE DIAGNOSTIC] Falló la conexión.");
         }
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"❌ Error al conectar a la base de datos: {ex.Message}");
+        Console.WriteLine($"❌ [AZURE DIAGNOSTIC] ERROR: {ex.Message}");
     }
 }
+
+// ============================================
+// 10. DIAGNÓSTICO DE SEGURIDAD
+// ============================================
+var securityEnabled = app.Configuration.GetValue<bool>("Security:EnableSecurity", false);
+Console.WriteLine($"🔒 [SECURITY] Estado: {(securityEnabled ? "ACTIVADA" : "DESACTIVADA")}");
+Console.WriteLine($"🔒 [SECURITY] Módulo ID: {app.Configuration.GetValue<int>("Security:ModuloId", 0)}");
 
 app.Run();

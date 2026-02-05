@@ -484,6 +484,67 @@ namespace InvoiceManagementAPI.Controllers
             }
         }
 
+        /// <summary>
+        /// Obtiene todas las facturas que contienen un producto específico
+        /// Retorna solo la factura y sus detalles
+        /// </summary>
+        /// <param name="codigoProducto">Código del producto (ej: PRD-0002)</param>
+        /// <returns>Lista de facturas con sus detalles</returns>
+        [HttpGet("por-producto/{codigoProducto}")]
+        public async Task<ActionResult> GetFacturasPorProducto(string codigoProducto)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(codigoProducto))
+                {
+                    return BadRequest(new { success = false, message = "El código de producto es requerido" });
+                }
+
+                var facturas = await _context.Facturas
+                    .Include(f => f.DetallesFactura)
+                    // 1. Filtro Padre: Selecciona las facturas que contienen el producto
+                    .Where(f => f.DetallesFactura.Any(d => d.DetCodigoProducto == codigoProducto))
+                    .OrderByDescending(f => f.FacFechaEmision)
+                    .Select(f => new
+                    {
+                        // Datos de Cabecera (Factura)
+                        facNumeroFactura = f.FacNumeroFactura,
+                        facFechaEmision = f.FacFechaEmision,
+                        facTotal = f.FacTotal,
+                        // ... puedes dejar el resto de campos de cabecera si los necesitas ...
+
+                        // 2. Filtro Hijo: AQUÍ ESTÁ LA SOLUCIÓN
+                        // Solo selecciona los detalles que coinciden con el código buscado
+                        detallesFactura = f.DetallesFactura
+                            .Where(d => d.DetCodigoProducto == codigoProducto) // <--- FILTRO APLICADO AQUI
+                            .Select(d => new
+                            {
+                                detNombreProducto = d.DetNombreProducto,
+                                detCodigoProducto = d.DetCodigoProducto,
+                                detCantidad = d.DetCantidad, // <--- Lo que te interesa
+                                detTotal = d.DetTotal
+                            }).ToList()
+                    })
+                    .ToListAsync();
+
+                if (!facturas.Any())
+                {
+                    return Ok(new { success = true, message = $"No se encontraron facturas con el producto '{codigoProducto}'", data = new List<object>() });
+                }
+
+                return Ok(new
+                {
+                    success = true,
+                    message = $"Se encontraron {facturas.Count} facturas con el producto '{codigoProducto}'",
+                    data = facturas
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Error", error = ex.Message });
+            }
+        }
+
 
 
 
