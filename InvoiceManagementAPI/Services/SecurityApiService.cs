@@ -17,7 +17,7 @@ namespace InvoiceManagementAPI.Services
     {
         private readonly HttpClient _httpClient;
         private readonly ILogger<SecurityApiService> _logger;
-        private const string BASE_URL = "https://api-seguridad.sistemanh.shop";
+        private const string BASE_URL = "https://98.84.67.160.nip.io";
 
         public SecurityApiService(HttpClient httpClient, ILogger<SecurityApiService> logger)
         {

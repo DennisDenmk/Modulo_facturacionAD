@@ -44,7 +44,6 @@ namespace InvoiceManagementAPI.Middleware
                 {
                     "/api/clientes",        // 👈 Incluye /api/clientes y /api/clientes/{id}
                     "/api/facturas",
-                    "/api/masterauditorias"
                 };
 
                 if (publicGetEndpoints.Any(p => path.StartsWith(p.ToLower())))
