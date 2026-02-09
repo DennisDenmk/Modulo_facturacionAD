@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Text.Json.Serialization;
-using System.Globalization; // Importante para convertir "15.00" a decimal
+using System.Globalization;
 
 namespace InvoiceManagementAPI.Model.DTOs
 {
@@ -9,12 +9,23 @@ namespace InvoiceManagementAPI.Model.DTOs
         [JsonPropertyName("data")]
         public List<ProductDto> Data { get; set; }
 
-        // Campos para paginación (si la API los envía en la raíz)
+        [JsonPropertyName("current_page")]
+        public int CurrentPage { get; set; }
+
         [JsonPropertyName("last_page")]
         public int LastPage { get; set; }
 
-        [JsonPropertyName("current_page")]
-        public int CurrentPage { get; set; }
+        [JsonPropertyName("per_page")]
+        public int PerPage { get; set; }
+
+        [JsonPropertyName("total")]
+        public int Total { get; set; }
+
+        [JsonPropertyName("from")]
+        public int? From { get; set; }
+
+        [JsonPropertyName("to")]
+        public int? To { get; set; }
     }
 
     public class ProductDto
@@ -28,7 +39,6 @@ namespace InvoiceManagementAPI.Model.DTOs
         [JsonPropertyName("nombre")]
         public string Nombre { get; set; }
 
-        // EL PROBLEMA REAL: La API envía "84.00" (String)
         [JsonPropertyName("pvp")]
         public string PvpString { get; set; }
 
@@ -38,13 +48,11 @@ namespace InvoiceManagementAPI.Model.DTOs
         [JsonPropertyName("impuesto")]
         public ImpuestoDto Impuesto { get; set; }
 
-        // PROPIEDAD CALCULADA: Convierte el string a decimal
         [JsonIgnore]
         public decimal PrecioVenta
         {
             get
             {
-                // Usamos CultureInfo.InvariantCulture para asegurar que el punto "." se lea como decimal
                 if (decimal.TryParse(PvpString, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal result))
                     return result;
                 return 0;
@@ -54,7 +62,6 @@ namespace InvoiceManagementAPI.Model.DTOs
 
     public class ImpuestoDto
     {
-        // EL PROBLEMA REAL: La API envía "15.00" (String)
         [JsonPropertyName("porcentaje")]
         public string PorcentajeString { get; set; }
 

@@ -3,22 +3,11 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
-using System.Text.Json.Serialization;
+using System.Text.Json;
 using InvoiceManagementAPI.Model.DTOs;
 
 namespace InvoiceManagementAPI.Services
 {
-    // Clase auxiliar interna para leer la metadata de paginación de Laravel
-    // Hereda de tu InventoryResponse original para no romper nada
-    public class InventoryResponseWithMeta : InventoryResponse
-    {
-        [JsonPropertyName("last_page")]
-        public int LastPage { get; set; }
-
-        [JsonPropertyName("current_page")]
-        public int CurrentPage { get; set; }
-    }
-
     public class InventoryService : IInventoryService
     {
         private readonly HttpClient _httpClient;
@@ -30,62 +19,101 @@ namespace InvoiceManagementAPI.Services
 
         public async Task<ProductDto> ObtenerProductoPorCodigo(string codigo)
         {
-            int paginaActual = 1;
-            int ultimaPagina = 1;
+            Console.WriteLine($"🔍 Buscando: '{codigo}'");
 
-            // Iniciamos un bucle para buscar página por página
-            do
+            int paginaActual = 1;
+            int ultimaPagina = int.MaxValue;
+
+            while (paginaActual <= ultimaPagina)
             {
                 try
                 {
-                    // 1. Solicitamos la página dinámica
                     var url = $"products?page={paginaActual}";
+                    Console.WriteLine($"📡 GET {_httpClient.BaseAddress}{url}");
 
-                    // Usamos la clase extendida para capturar el 'last_page'
-                    var response = await _httpClient.GetFromJsonAsync<InventoryResponseWithMeta>(url);
+                    // 🔍 VER RESPUESTA RAW PARA DEBUG
+                    var httpResponse = await _httpClient.GetAsync(url);
+                    var jsonString = await httpResponse.Content.ReadAsStringAsync();
 
-                    if (response?.Data != null)
+                    Console.WriteLine("=== RESPUESTA RAW (primeros 500 caracteres) ===");
+                    Console.WriteLine(jsonString.Substring(0, Math.Min(500, jsonString.Length)));
+                    Console.WriteLine("==============================================");
+
+                    var response = JsonSerializer.Deserialize<InventoryResponse>(jsonString, new JsonSerializerOptions
                     {
-                        // 2. Buscamos el producto en ESTA página
-                        // Usamos StringComparison para ignorar mayúsculas/minúsculas
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    if (response == null)
+                    {
+                        Console.WriteLine("⚠️ Response NULL");
+                        return null;
+                    }
+
+                    Console.WriteLine($"📊 Deserializado: CurrentPage={response.CurrentPage}, LastPage={response.LastPage}, Total={response.Total}");
+
+                    // Primera vez: establecer límite
+                    if (paginaActual == 1)
+                    {
+                        ultimaPagina = response.LastPage;
+                        Console.WriteLine($"📚 Total: {response.Total} productos en {ultimaPagina} página(s)");
+                    }
+
+                    if (response.Data != null && response.Data.Any())
+                    {
+                        Console.WriteLine($"📄 Página {response.CurrentPage}/{ultimaPagina} - {response.Data.Count} productos");
+
+                        // Mostrar IDs para verificar orden
+                        var ids = string.Join(", ", response.Data.Take(5).Select(p => $"{p.Codigo}(ID:{p.Id})"));
+                        Console.WriteLine($"   Primeros 5: {ids}");
+
+                        // Buscar producto
                         var producto = response.Data
                             .FirstOrDefault(p => p.Codigo.Equals(codigo, StringComparison.OrdinalIgnoreCase));
 
-                        // SI LO ENCONTRAMOS, ¡RETORNAMOS INMEDIATAMENTE!
                         if (producto != null)
                         {
+                            Console.WriteLine($"✅ ENCONTRADO: {producto.Codigo} | Stock: {producto.Stock} | PVP: {producto.PrecioVenta}");
                             return producto;
                         }
 
-                        // 3. Si no está, actualizamos el límite para seguir buscando
-                        // La API nos dice cuál es la última página (ej: 5)
-                        if (response.LastPage > 0)
-                        {
-                            ultimaPagina = response.LastPage;
-                        }
+                        Console.WriteLine($"   ❌ '{codigo}' no está en esta página");
                     }
+                    else
+                    {
+                        Console.WriteLine($"⚠️ Página {paginaActual} vacía");
+                        break;
+                    }
+
+                    paginaActual++;
                 }
                 catch (Exception ex)
                 {
-                    // Loguear error pero no detener el flujo si es posible intentar otra cosa
-                    Console.WriteLine($"Error consultando página {paginaActual}: {ex.Message}");
+                    Console.WriteLine($"❌ Error: {ex.Message}");
+                    if (ex.InnerException != null)
+                        Console.WriteLine($"   Inner: {ex.InnerException.Message}");
                     return null;
                 }
+            }
 
-                // Pasamos a la siguiente página
-                paginaActual++;
-
-            } while (paginaActual <= ultimaPagina);
-
-            // Si llegamos aquí, recorrimos TODAS las páginas y no existe
+            Console.WriteLine($"❌ '{codigo}' NO ENCONTRADO después de revisar {paginaActual - 1} página(s)");
             return null;
         }
 
         public async Task<bool> VerificarStock(string codigo, int cantidadRequerida)
         {
             var producto = await ObtenerProductoPorCodigo(codigo);
-            if (producto == null) return false;
-            return producto.Stock >= cantidadRequerida;
+
+            if (producto == null)
+            {
+                Console.WriteLine($"⚠️ '{codigo}' no existe en inventario");
+                return false;
+            }
+
+            bool suficiente = producto.Stock >= cantidadRequerida;
+            Console.WriteLine($"📊 Stock: {producto.Stock} | Requiere: {cantidadRequerida} → {(suficiente ? "✅ OK" : "❌ INSUFICIENTE")}");
+
+            return suficiente;
         }
     }
 }

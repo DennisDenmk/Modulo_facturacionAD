@@ -117,9 +117,16 @@ builder.Services.AddCors(options =>
 // ============================================
 builder.Services.AddHttpClient<IInventoryService, InventoryService>(client =>
 {
-    client.BaseAddress = new Uri("https://api-inventario.up.railway.app/api/");
+    client.BaseAddress = new Uri("https://3.234.109.104/api/");
+    client.Timeout = TimeSpan.FromSeconds(30);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    // ⚠️ SOLO PARA DESARROLLO - Deshabilitar validación SSL
+    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
 });
+
 
 var app = builder.Build();
 
