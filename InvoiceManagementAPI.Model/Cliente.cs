@@ -44,7 +44,7 @@ namespace InvoiceManagementAPI.Model
         public bool? CliEstado { get; set; }
 
         [Column("cli_fecha_creacion")]
-        public DateTime? CliFechaCreacion { get; set; }
+        public DateTime? CliFechaCreacion { get; set; } = DateTime.Now;
 
         [Column("cli_fecha_modificacion")]
         public DateTime? CliFechaModificacion { get; set; }
