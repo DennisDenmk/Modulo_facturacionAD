@@ -8,14 +8,14 @@ ENV DOTNET_RUNNING_IN_CONTAINER=true
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Copia el .csproj desde el contexto raíz (optimiza cache)
+# Copia el .csproj desde el contexto raÃ­z (optimiza cache)
 COPY ["InvoiceManagementAPI/InvoiceManagementAPI.csproj", "InvoiceManagementAPI/"]
 RUN dotnet restore "InvoiceManagementAPI/InvoiceManagementAPI.csproj"
 
 # Copia todo el repositorio y publica la app
 COPY . .
 WORKDIR /src/InvoiceManagementAPI
-RUN dotnet publish -c Release -o /app/publish --no-restore /p:PublishTrimmed=false
+RUN dotnet publish -c Release -o /app/publish /p:PublishTrimmed=false
 
 # Etapa final: runtime ligero
 FROM base AS final
